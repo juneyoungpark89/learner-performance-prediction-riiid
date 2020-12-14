@@ -1,8 +1,11 @@
 import argparse
+import numpy as np
 import pandas as pd
 from random import shuffle
 from sklearn.metrics import roc_auc_score, accuracy_score
 
+import os
+import torch
 import torch.nn as nn
 from torch.optim import Adam
 from torch.nn.utils import clip_grad_norm_
@@ -20,16 +23,32 @@ def get_data(df, max_length, train_split=0.8, randomize=True):
         max_length (int): maximum length of a sequence chunk
         train_split (float): proportion of data to use for training
     """
-    item_ids = [torch.tensor(u_df["item_id"].values, dtype=torch.long)
-                for _, u_df in df.groupby("user_id")]
-    skill_ids = [torch.tensor(u_df["skill_id"].values, dtype=torch.long)
-                 for _, u_df in df.groupby("user_id")]
-    labels = [torch.tensor(u_df["correct"].values, dtype=torch.long)
-              for _, u_df in df.groupby("user_id")]
+    item_ids = [
+        torch.tensor(u_df["item_id"].values, dtype=torch.long)
+        for _, u_df in df.groupby("user_id")
+    ]
+    skill_ids = [
+        torch.tensor(u_df["skill_id"].values, dtype=torch.long)
+        for _, u_df in df.groupby("user_id")
+    ]
+    labels = [
+        torch.tensor(u_df["correct"].values, dtype=torch.long)
+        for _, u_df in df.groupby("user_id")
+    ]
 
-    item_inputs = [torch.cat((torch.zeros(1, dtype=torch.long), i + 1))[:-1] for i in item_ids]
-    skill_inputs = [torch.cat((torch.zeros(1, dtype=torch.long), s + 1))[:-1] for s in skill_ids]
-    label_inputs = [torch.cat((torch.zeros(1, dtype=torch.long), l))[:-1] for l in labels]
+    item_inputs = [
+        torch.cat((torch.zeros(1, dtype=torch.long), i + 1))[:-1]
+        for i in item_ids
+    ]
+    skill_inputs = [
+        torch.cat((torch.zeros(1, dtype=torch.long), s + 1))[:-1]
+        for s in skill_ids
+    ]
+    label_inputs = [
+        torch.cat(
+            (torch.zeros(1, dtype=torch.long), label)
+        )[:-1] for label in labels
+    ]
 
     def chunk(list):
         if list[0] is None:
@@ -38,8 +57,15 @@ def get_data(df, max_length, train_split=0.8, randomize=True):
         return [elem for sublist in list for elem in sublist]
 
     # Chunk sequences
-    lists = (item_inputs, skill_inputs, label_inputs, item_ids, skill_ids, labels)
-    chunked_lists = [chunk(l) for l in lists]
+    lists = (
+        item_inputs,
+        skill_inputs,
+        label_inputs,
+        item_ids,
+        skill_ids,
+        labels,
+    )
+    chunked_lists = [chunk(lst) for lst in lists]
 
     data = list(zip(*chunked_lists))
     if randomize:
@@ -65,11 +91,17 @@ def prepare_batches(data, batch_size, randomize=True):
     batches = []
 
     for k in range(0, len(data), batch_size):
-        batch = data[k:k + batch_size]
+        batch = data[k: k + batch_size]
         seq_lists = list(zip(*batch))
-        inputs_and_ids = [pad_sequence(seqs, batch_first=True, padding_value=0)
-                          if (seqs[0] is not None) else None for seqs in seq_lists[:-1]]
-        labels = pad_sequence(seq_lists[-1], batch_first=True, padding_value=-1)  # Pad labels with -1
+        inputs_and_ids = [
+            pad_sequence(seqs, batch_first=True, padding_value=0)
+            if (seqs[0] is not None)
+            else None
+            for seqs in seq_lists[:-1]
+        ]
+        labels = pad_sequence(
+            seq_lists[-1], batch_first=True, padding_value=-1
+        )  # Pad labels with -1
         batches.append([*inputs_and_ids, labels])
 
     return batches
@@ -91,7 +123,17 @@ def compute_loss(preds, labels, criterion):
     return criterion(preds, labels)
 
 
-def train(train_data, val_data, model, optimizer, logger, saver, num_epochs, batch_size, grad_clip):
+def train(
+    train_data,
+    val_data,
+    model,
+    optimizer,
+    logger,
+    saver,
+    num_epochs,
+    batch_size,
+    grad_clip,
+):
     """Train SAKT model.
 
     Arguments:
@@ -114,14 +156,23 @@ def train(train_data, val_data, model, optimizer, logger, saver, num_epochs, bat
         val_batches = prepare_batches(val_data, batch_size)
 
         # Training
-        for item_inputs, skill_inputs, label_inputs, item_ids, skill_ids, labels in train_batches:
+        for (
+            item_inputs,
+            skill_inputs,
+            label_inputs,
+            item_ids,
+            skill_ids,
+            labels,
+        ) in train_batches:
             item_inputs = item_inputs.cuda()
             skill_inputs = skill_inputs.cuda()
             label_inputs = label_inputs.cuda()
             item_ids = item_ids.cuda()
             skill_ids = skill_ids.cuda()
 
-            preds = model(item_inputs, skill_inputs, label_inputs, item_ids, skill_ids)
+            preds = model(
+                item_inputs, skill_inputs, label_inputs, item_ids, skill_ids
+            )
             loss = compute_loss(preds, labels.cuda(), criterion)
             preds = torch.sigmoid(preds).detach().cpu()
             train_auc = compute_auc(preds, labels)
@@ -131,111 +182,169 @@ def train(train_data, val_data, model, optimizer, logger, saver, num_epochs, bat
             clip_grad_norm_(model.parameters(), grad_clip)
             optimizer.step()
             step += 1
-            metrics.store({'loss/train': loss.item()})
-            metrics.store({'auc/train': train_auc})
+            metrics.store({"loss/train": loss.item()})
+            metrics.store({"auc/train": train_auc})
 
             # Logging
             if step % 20 == 0:
                 logger.log_scalars(metrics.average(), step)
-                # weights = {"weight/" + name: param for name, param in model.named_parameters()}
+                # weights = {"weight/" + name: param in model.named_parameters}
                 # grads = {"grad/" + name: param.grad
-                #         for name, param in model.named_parameters() if param.grad is not None}
+                #         for name, param in model.named_parameters()
+                #         if param.grad is not None}
                 # logger.log_histograms(weights, step)
                 # logger.log_histograms(grads, step)
 
         # Validation
         model.eval()
-        for item_inputs, skill_inputs, label_inputs, item_ids, skill_ids, labels in val_batches:
+        for (
+            item_inputs,
+            skill_inputs,
+            label_inputs,
+            item_ids,
+            skill_ids,
+            labels,
+        ) in val_batches:
             item_inputs = item_inputs.cuda()
             skill_inputs = skill_inputs.cuda()
             label_inputs = label_inputs.cuda()
             item_ids = item_ids.cuda()
             skill_ids = skill_ids.cuda()
             with torch.no_grad():
-                preds = model(item_inputs, skill_inputs, label_inputs, item_ids, skill_ids)
+                preds = model(
+                    item_inputs,
+                    skill_inputs,
+                    label_inputs,
+                    item_ids,
+                    skill_ids,
+                )
                 preds = torch.sigmoid(preds).cpu()
             val_auc = compute_auc(preds, labels)
-            metrics.store({'auc/val': val_auc})
+            metrics.store({"auc/val": val_auc})
         model.train()
 
         # Save model
         average_metrics = metrics.average()
         logger.log_scalars(average_metrics, step)
-        stop = saver.save(average_metrics['auc/val'], model)
+        stop = saver.save(average_metrics["auc/val"], model)
         if stop:
             break
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Train SAKT.')
-    parser.add_argument('--dataset', type=str)
-    parser.add_argument('--logdir', type=str, default='runs/sakt')
-    parser.add_argument('--savedir', type=str, default='save/sakt')
-    parser.add_argument('--max_length', type=int, default=200)
-    parser.add_argument('--embed_size', type=int, default=200)
-    parser.add_argument('--num_attn_layers', type=int, default=1)
-    parser.add_argument('--num_heads', type=int, default=5)
-    parser.add_argument('--encode_pos', action='store_true')
-    parser.add_argument('--max_pos', type=int, default=10)
-    parser.add_argument('--drop_prob', type=float, default=0.2)
-    parser.add_argument('--batch_size', type=int, default=100)
-    parser.add_argument('--lr', type=float, default=1e-3)
-    parser.add_argument('--grad_clip', type=float, default=10)
-    parser.add_argument('--num_epochs', type=int, default=300)
+    parser = argparse.ArgumentParser(description="Train SAKT.")
+    parser.add_argument("--dataset", type=str)
+    parser.add_argument("--logdir", type=str, default="runs/sakt")
+    parser.add_argument("--savedir", type=str, default="save/sakt")
+    parser.add_argument("--max_length", type=int, default=200)
+    parser.add_argument("--embed_size", type=int, default=200)
+    parser.add_argument("--num_attn_layers", type=int, default=1)
+    parser.add_argument("--num_heads", type=int, default=5)
+    parser.add_argument("--encode_pos", action="store_true")
+    parser.add_argument("--max_pos", type=int, default=10)
+    parser.add_argument("--drop_prob", type=float, default=0.2)
+    parser.add_argument("--batch_size", type=int, default=100)
+    parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--grad_clip", type=float, default=10)
+    parser.add_argument("--num_epochs", type=int, default=300)
     args = parser.parse_args()
 
-    full_df = pd.read_csv(os.path.join('data', args.dataset, 'preprocessed_data.csv'), sep="\t")
-    train_df = pd.read_csv(os.path.join('data', args.dataset, 'preprocessed_data_train.csv'), sep="\t")
-    test_df = pd.read_csv(os.path.join('data', args.dataset, 'preprocessed_data_test.csv'), sep="\t")
+    full_df = pd.read_csv(
+        os.path.join("data", args.dataset, "preprocessed_data.csv"), sep="\t"
+    )
+    train_df = pd.read_csv(
+        os.path.join("data", args.dataset, "preprocessed_data_train.csv"),
+        sep="\t",
+    )
+    test_df = pd.read_csv(
+        os.path.join("data", args.dataset, "preprocessed_data_test.csv"),
+        sep="\t",
+    )
 
     train_data, val_data = get_data(train_df, args.max_length)
 
     num_items = int(full_df["item_id"].max() + 1)
     num_skills = int(full_df["skill_id"].max() + 1)
 
-    model = SAKT(num_items, num_skills, args.embed_size, args.num_attn_layers, args.num_heads,
-                  args.encode_pos, args.max_pos, args.drop_prob).cuda()
+    model = SAKT(
+        num_items,
+        num_skills,
+        args.embed_size,
+        args.num_attn_layers,
+        args.num_heads,
+        args.encode_pos,
+        args.max_pos,
+        args.drop_prob,
+    ).cuda()
     optimizer = Adam(model.parameters(), lr=args.lr)
 
     # Reduce batch size until it fits on GPU
     while True:
         try:
             # Train
-            param_str = (f'{args.dataset},'
-                         f'batch_size={args.batch_size},'
-                         f'max_length={args.max_length},'
-                         f'encode_pos={args.encode_pos},'
-                         f'max_pos={args.max_pos}')
+            param_str = (
+                f"{args.dataset},"
+                f"batch_size={args.batch_size},"
+                f"max_length={args.max_length},"
+                f"encode_pos={args.encode_pos},"
+                f"max_pos={args.max_pos}"
+            )
             logger = Logger(os.path.join(args.logdir, param_str))
             saver = Saver(args.savedir, param_str)
-            train(train_data, val_data, model, optimizer, logger, saver, args.num_epochs,
-                  args.batch_size, args.grad_clip)
+            train(
+                train_data,
+                val_data,
+                model,
+                optimizer,
+                logger,
+                saver,
+                args.num_epochs,
+                args.batch_size,
+                args.grad_clip,
+            )
             break
         except RuntimeError:
             args.batch_size = args.batch_size // 2
-            print(f'Batch does not fit on gpu, reducing size to {args.batch_size}')
+            print(
+                f"Batch does not fit on gpu, reducing size to {args.batch_size}"
+            )
 
     logger.close()
 
-    test_data, _ = get_data(test_df, args.max_length, train_split=1.0, randomize=False)
+    test_data, _ = get_data(
+        test_df, args.max_length, train_split=1.0, randomize=False
+    )
     test_batches = prepare_batches(test_data, args.batch_size, randomize=False)
     test_preds = np.empty(0)
 
     # Predict on test set
     model.eval()
-    for item_inputs, skill_inputs, label_inputs, item_ids, skill_ids, labels in test_batches:
+    for (
+        item_inputs,
+        skill_inputs,
+        label_inputs,
+        item_ids,
+        skill_ids,
+        labels,
+    ) in test_batches:
         item_inputs = item_inputs.cuda()
         skill_inputs = skill_inputs.cuda()
         label_inputs = label_inputs.cuda()
         item_ids = item_ids.cuda()
         skill_ids = skill_ids.cuda()
         with torch.no_grad():
-            preds = model(item_inputs, skill_inputs, label_inputs, item_ids, skill_ids)
+            preds = model(
+                item_inputs, skill_inputs, label_inputs, item_ids, skill_ids
+            )
             preds = torch.sigmoid(preds[labels >= 0]).flatten().cpu().numpy()
             test_preds = np.concatenate([test_preds, preds])
 
     # Write predictions to csv
     test_df["SAKT"] = test_preds
-    test_df.to_csv(f'data/{args.dataset}/preprocessed_data_test.csv', sep="\t", index=False)
+    test_df.to_csv(
+        f"data/{args.dataset}/preprocessed_data_test.csv",
+        sep="\t",
+        index=False,
+    )
 
     print("auc_test = ", roc_auc_score(test_df["correct"], test_preds))

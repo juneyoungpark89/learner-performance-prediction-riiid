@@ -5,7 +5,9 @@ import argparse
 import os
 
 
-def prepare_assistments(data_name, min_interactions_per_user, remove_nan_skills, train_split=0.8):
+def prepare_assistments(
+    data_name, min_interactions_per_user, remove_nan_skills, train_split=0.8
+):
     """Preprocess ASSISTments dataset.
     
     Arguments:
@@ -20,7 +22,9 @@ def prepare_assistments(data_name, min_interactions_per_user, remove_nan_skills,
         Q_mat (item-skill relationships sparse array): corresponding q-matrix
     """
     data_path = os.path.join("data", data_name)
-    df = pd.read_csv(os.path.join(data_path, "data.csv"), encoding="ISO-8859-1")
+    df = pd.read_csv(
+        os.path.join(data_path, "data.csv"), encoding="ISO-8859-1"
+    )
 
     # Only 2012 and 2017 versions have timestamps
     if data_name == "assistments09":
@@ -30,16 +34,22 @@ def prepare_assistments(data_name, min_interactions_per_user, remove_nan_skills,
         df = df.rename(columns={"problem_id": "item_id"})
         df["timestamp"] = pd.to_datetime(df["start_time"])
         df["timestamp"] = df["timestamp"] - df["timestamp"].min()
-        df["timestamp"] = df["timestamp"].apply(lambda x: x.total_seconds()).astype(np.int64)
+        df["timestamp"] = (
+            df["timestamp"].apply(lambda x: x.total_seconds()).astype(np.int64)
+        )
     elif data_name == "assistments15":
         df = df.rename(columns={"sequence_id": "item_id"})
         df["skill_id"] = df["item_id"]
         df["timestamp"] = np.zeros(len(df), dtype=np.int64)
     elif data_name == "assistments17":
-        df = df.rename(columns={"startTime": "timestamp",
-                                "studentId": "user_id",
-                                "problemId": "item_id",
-                                "skill": "skill_id"})
+        df = df.rename(
+            columns={
+                "startTime": "timestamp",
+                "studentId": "user_id",
+                "problemId": "item_id",
+                "skill": "skill_id",
+            }
+        )
         df["timestamp"] = df["timestamp"] - df["timestamp"].min()
 
     # Remove continuous outcomes
@@ -53,14 +63,18 @@ def prepare_assistments(data_name, min_interactions_per_user, remove_nan_skills,
         df.ix[df["skill_id"].isnull(), "skill_id"] = -1
 
     # Filter too short sequences
-    df = df.groupby("user_id").filter(lambda x: len(x) >= min_interactions_per_user)
+    df = df.groupby("user_id").filter(
+        lambda x: len(x) >= min_interactions_per_user
+    )
 
     df["user_id"] = np.unique(df["user_id"], return_inverse=True)[1]
     df["item_id"] = np.unique(df["item_id"], return_inverse=True)[1]
     df["skill_id"] = np.unique(df["skill_id"], return_inverse=True)[1]
 
     # Build Q-matrix
-    Q_mat = np.zeros((len(df["item_id"].unique()), len(df["skill_id"].unique())))
+    Q_mat = np.zeros(
+        (len(df["item_id"].unique()), len(df["skill_id"].unique()))
+    )
     for item_id, skill_id in df[["item_id", "skill_id"]].values:
         Q_mat[item_id, skill_id] = 1
 
@@ -91,7 +105,9 @@ def prepare_assistments(data_name, min_interactions_per_user, remove_nan_skills,
     # Text files for BKT implementation (https://github.com/robert-lindsey/WCRP/)
     bkt_dataset = df[["user_id", "item_id", "correct"]]
     bkt_skills = unique_skill_ids
-    bkt_split = np.random.randint(low=0, high=5, size=df["user_id"].nunique()).reshape(1, -1)
+    bkt_split = np.random.randint(
+        low=0, high=5, size=df["user_id"].nunique()
+    ).reshape(1, -1)
 
     # Train-test split
     users = df["user_id"].unique()
@@ -101,16 +117,38 @@ def prepare_assistments(data_name, min_interactions_per_user, remove_nan_skills,
     test_df = df[df["user_id"].isin(users[split:])]
 
     # Save data
-    sparse.save_npz(os.path.join(data_path, "q_mat.npz"), sparse.csr_matrix(Q_mat))
-    train_df.to_csv(os.path.join(data_path, "preprocessed_data_train.csv"), sep="\t", index=False)
-    test_df.to_csv(os.path.join(data_path, "preprocessed_data_test.csv"), sep="\t", index=False)
-    df.to_csv(os.path.join(data_path, "preprocessed_data.csv"), sep="\t", index=False)
-    np.savetxt(os.path.join(data_path, "bkt_dataset.txt"), bkt_dataset, fmt='%i')
-    np.savetxt(os.path.join(data_path, "bkt_expert_labels.txt"), bkt_skills, fmt='%i')
-    np.savetxt(os.path.join(data_path, "bkt_splits.txt"), bkt_split, fmt='%i')
+    sparse.save_npz(
+        os.path.join(data_path, "q_mat.npz"), sparse.csr_matrix(Q_mat)
+    )
+    train_df.to_csv(
+        os.path.join(data_path, "preprocessed_data_train.csv"),
+        sep="\t",
+        index=False,
+    )
+    test_df.to_csv(
+        os.path.join(data_path, "preprocessed_data_test.csv"),
+        sep="\t",
+        index=False,
+    )
+    df.to_csv(
+        os.path.join(data_path, "preprocessed_data.csv"), sep="\t", index=False
+    )
+    np.savetxt(
+        os.path.join(data_path, "bkt_dataset.txt"), bkt_dataset, fmt="%i"
+    )
+    np.savetxt(
+        os.path.join(data_path, "bkt_expert_labels.txt"), bkt_skills, fmt="%i"
+    )
+    np.savetxt(os.path.join(data_path, "bkt_splits.txt"), bkt_split, fmt="%i")
 
 
-def prepare_kddcup10(data_name, min_interactions_per_user, kc_col_name, remove_nan_skills, train_split=0.8):
+def prepare_kddcup10(
+    data_name,
+    min_interactions_per_user,
+    kc_col_name,
+    remove_nan_skills,
+    train_split=0.8,
+):
     """Preprocess KDD Cup 2010 dataset.
 
     Arguments:
@@ -126,9 +164,13 @@ def prepare_kddcup10(data_name, min_interactions_per_user, kc_col_name, remove_n
         Q_mat (item-skill relationships sparse array): corresponding q-matrix
     """
     data_path = os.path.join("data", data_name)
-    df = pd.read_csv(os.path.join(data_path, "data.txt"), delimiter='\t')
-    df = df.rename(columns={'Anon Student Id': 'user_id',
-                            'Correct First Attempt': 'correct'})
+    df = pd.read_csv(os.path.join(data_path, "data.txt"), delimiter="\t")
+    df = df.rename(
+        columns={
+            "Anon Student Id": "user_id",
+            "Correct First Attempt": "correct",
+        }
+    )
 
     # Create item from problem and step
     df["item_id"] = df["Problem Name"] + ":" + df["Step Name"]
@@ -136,28 +178,34 @@ def prepare_kddcup10(data_name, min_interactions_per_user, kc_col_name, remove_n
     # Add timestamp
     df["timestamp"] = pd.to_datetime(df["First Transaction Time"])
     df["timestamp"] = df["timestamp"] - df["timestamp"].min()
-    df["timestamp"] = df["timestamp"].apply(lambda x: x.total_seconds()).astype(np.int64)
+    df["timestamp"] = (
+        df["timestamp"].apply(lambda x: x.total_seconds()).astype(np.int64)
+    )
 
     # Remove continuous outcomes
     df = df[df["correct"].isin([0, 1])]
-    df['correct'] = df['correct'].astype(np.int32)
+    df["correct"] = df["correct"].astype(np.int32)
 
     # Filter nan skills
     if remove_nan_skills:
         df = df[~df[kc_col_name].isnull()]
     else:
-        df.ix[df[kc_col_name].isnull(), kc_col_name] = 'NaN'
+        df.ix[df[kc_col_name].isnull(), kc_col_name] = "NaN"
 
     # Drop duplicates
-    df.drop_duplicates(subset=["user_id", "item_id", "timestamp"], inplace=True)
+    df.drop_duplicates(
+        subset=["user_id", "item_id", "timestamp"], inplace=True
+    )
 
     # Filter too short sequences
-    df = df.groupby("user_id").filter(lambda x: len(x) >= min_interactions_per_user)
+    df = df.groupby("user_id").filter(
+        lambda x: len(x) >= min_interactions_per_user
+    )
 
     # Extract KCs
     kc_list = []
     for kc_str in df[kc_col_name].unique():
-        for kc in kc_str.split('~~'):
+        for kc in kc_str.split("~~"):
             kc_list.append(kc)
     kc_set = set(kc_list)
     kc2idx = {kc: i for i, kc in enumerate(kc_set)}
@@ -168,7 +216,7 @@ def prepare_kddcup10(data_name, min_interactions_per_user, kc_col_name, remove_n
     # Build Q-matrix
     Q_mat = np.zeros((len(df["item_id"].unique()), len(kc_set)))
     for item_id, kc_str in df[["item_id", kc_col_name]].values:
-        for kc in kc_str.split('~~'):
+        for kc in kc_str.split("~~"):
             Q_mat[item_id, kc2idx[kc]] = 1
 
     # Get unique skill id from combination of all skill ids
@@ -187,7 +235,9 @@ def prepare_kddcup10(data_name, min_interactions_per_user, kc_col_name, remove_n
     # Text files for BKT implementation (https://github.com/robert-lindsey/WCRP/)
     bkt_dataset = df[["user_id", "item_id", "correct"]]
     bkt_skills = unique_skill_ids
-    bkt_split = np.random.randint(low=0, high=5, size=df["user_id"].nunique()).reshape(1, -1)
+    bkt_split = np.random.randint(
+        low=0, high=5, size=df["user_id"].nunique()
+    ).reshape(1, -1)
 
     # Train-test split
     users = df["user_id"].unique()
@@ -197,13 +247,29 @@ def prepare_kddcup10(data_name, min_interactions_per_user, kc_col_name, remove_n
     test_df = df[df["user_id"].isin(users[split:])]
 
     # Save data
-    sparse.save_npz(os.path.join(data_path, "q_mat.npz"), sparse.csr_matrix(Q_mat))
-    train_df.to_csv(os.path.join(data_path, "preprocessed_data_train.csv"), sep="\t", index=False)
-    test_df.to_csv(os.path.join(data_path, "preprocessed_data_test.csv"), sep="\t", index=False)
-    df.to_csv(os.path.join(data_path, "preprocessed_data.csv"), sep="\t", index=False)
-    np.savetxt(os.path.join(data_path, "bkt_dataset.txt"), bkt_dataset, fmt='%i')
-    np.savetxt(os.path.join(data_path, "bkt_expert_labels.txt"), bkt_skills, fmt='%i')
-    np.savetxt(os.path.join(data_path, "bkt_splits.txt"), bkt_split, fmt='%i')
+    sparse.save_npz(
+        os.path.join(data_path, "q_mat.npz"), sparse.csr_matrix(Q_mat)
+    )
+    train_df.to_csv(
+        os.path.join(data_path, "preprocessed_data_train.csv"),
+        sep="\t",
+        index=False,
+    )
+    test_df.to_csv(
+        os.path.join(data_path, "preprocessed_data_test.csv"),
+        sep="\t",
+        index=False,
+    )
+    df.to_csv(
+        os.path.join(data_path, "preprocessed_data.csv"), sep="\t", index=False
+    )
+    np.savetxt(
+        os.path.join(data_path, "bkt_dataset.txt"), bkt_dataset, fmt="%i"
+    )
+    np.savetxt(
+        os.path.join(data_path, "bkt_expert_labels.txt"), bkt_skills, fmt="%i"
+    )
+    np.savetxt(os.path.join(data_path, "bkt_splits.txt"), bkt_split, fmt="%i")
 
 
 def prepare_squirrel_ai(min_interactions_per_user):
@@ -222,24 +288,43 @@ def prepare_squirrel_ai(min_interactions_per_user):
     train_df = pd.read_csv(os.path.join(data_path, "studentDataFIT.csv"))
     test_df = pd.read_csv(os.path.join(data_path, "studentDataTEST.csv"))
 
-    train_df, test_df = [df.rename(columns={"student_index": "user_id",
-                                            "question_index": "item_id",
-                                            "KP_index": "skill_id",
-                                            "is_correct": "correct"})
-                         for df in (train_df, test_df)]
+    train_df, test_df = [
+        df.rename(
+            columns={
+                "student_index": "user_id",
+                "question_index": "item_id",
+                "KP_index": "skill_id",
+                "is_correct": "correct",
+            }
+        )
+        for df in (train_df, test_df)
+    ]
 
     # Timestamp in seconds
     train_df["timestamp"] = train_df["decimalTimeAnswered"] * 3600 * 24
-    train_df["timestamp"] = (train_df["timestamp"] - train_df["timestamp"].min()).astype(np.int64)
+    train_df["timestamp"] = (
+        train_df["timestamp"] - train_df["timestamp"].min()
+    ).astype(np.int64)
     test_df["timestamp"] = test_df["decimalTimeAnswered"] * 3600 * 24
-    test_df["timestamp"] = (test_df["timestamp"] - test_df["timestamp"].min()).astype(np.int64)
+    test_df["timestamp"] = (
+        test_df["timestamp"] - test_df["timestamp"].min()
+    ).astype(np.int64)
 
     # Filter too short sequences
-    train_df = train_df.groupby("user_id").filter(lambda x: len(x) >= min_interactions_per_user)
-    test_df = test_df.groupby("user_id").filter(lambda x: len(x) >= min_interactions_per_user)
+    train_df = train_df.groupby("user_id").filter(
+        lambda x: len(x) >= min_interactions_per_user
+    )
+    test_df = test_df.groupby("user_id").filter(
+        lambda x: len(x) >= min_interactions_per_user
+    )
 
-    train_df["user_id"] = np.unique(train_df["user_id"], return_inverse=True)[1]
-    test_df["user_id"] = np.unique(test_df["user_id"], return_inverse=True)[1] + train_df["user_id"].nunique()
+    train_df["user_id"] = np.unique(train_df["user_id"], return_inverse=True)[
+        1
+    ]
+    test_df["user_id"] = (
+        np.unique(test_df["user_id"], return_inverse=True)[1]
+        + train_df["user_id"].nunique()
+    )
 
     # Build Q-matrix
     num_items = max(train_df["item_id"].max(), test_df["item_id"].max()) + 1
@@ -255,8 +340,12 @@ def prepare_squirrel_ai(min_interactions_per_user):
     test_df["skill_id"] = unique_skill_ids[test_df["item_id"]]
 
     # Data is already sorted by users and temporally for each user
-    train_df = train_df[["user_id", "item_id", "timestamp", "correct", "skill_id"]]
-    test_df = test_df[["user_id", "item_id", "timestamp", "correct", "skill_id"]]
+    train_df = train_df[
+        ["user_id", "item_id", "timestamp", "correct", "skill_id"]
+    ]
+    test_df = test_df[
+        ["user_id", "item_id", "timestamp", "correct", "skill_id"]
+    ]
     df = pd.concat([train_df, test_df])
     train_df.reset_index(inplace=True, drop=True)
     test_df.reset_index(inplace=True, drop=True)
@@ -265,16 +354,36 @@ def prepare_squirrel_ai(min_interactions_per_user):
     # Text files for BKT implementation (https://github.com/robert-lindsey/WCRP/)
     bkt_dataset = df[["user_id", "item_id", "correct"]]
     bkt_skills = unique_skill_ids
-    bkt_split = np.random.randint(low=0, high=5, size=df["user_id"].nunique()).reshape(1, -1)
+    bkt_split = np.random.randint(
+        low=0, high=5, size=df["user_id"].nunique()
+    ).reshape(1, -1)
 
     # Save data
-    sparse.save_npz(os.path.join(data_path, "q_mat.npz"), sparse.csr_matrix(Q_mat))
-    train_df.to_csv(os.path.join(data_path, f"preprocessed_data_train.csv"), sep="\t", index=False)
-    test_df.to_csv(os.path.join(data_path, f"preprocessed_data_test.csv"), sep="\t", index=False)
-    df.to_csv(os.path.join(data_path, f"preprocessed_data.csv"), sep="\t", index=False)
-    np.savetxt(os.path.join(data_path, "bkt_dataset.txt"), bkt_dataset, fmt='%i')
-    np.savetxt(os.path.join(data_path, "bkt_expert_labels.txt"), bkt_skills, fmt='%i')
-    np.savetxt(os.path.join(data_path, "bkt_splits.txt"), bkt_split, fmt='%i')
+    sparse.save_npz(
+        os.path.join(data_path, "q_mat.npz"), sparse.csr_matrix(Q_mat)
+    )
+    train_df.to_csv(
+        os.path.join(data_path, f"preprocessed_data_train.csv"),
+        sep="\t",
+        index=False,
+    )
+    test_df.to_csv(
+        os.path.join(data_path, f"preprocessed_data_test.csv"),
+        sep="\t",
+        index=False,
+    )
+    df.to_csv(
+        os.path.join(data_path, f"preprocessed_data.csv"),
+        sep="\t",
+        index=False,
+    )
+    np.savetxt(
+        os.path.join(data_path, "bkt_dataset.txt"), bkt_dataset, fmt="%i"
+    )
+    np.savetxt(
+        os.path.join(data_path, "bkt_expert_labels.txt"), bkt_skills, fmt="%i"
+    )
+    np.savetxt(os.path.join(data_path, "bkt_splits.txt"), bkt_split, fmt="%i")
 
 
 def prepare_spanish(train_split=0.8):
@@ -290,7 +399,9 @@ def prepare_spanish(train_split=0.8):
     """
     data_path = "data/spanish"
 
-    data = np.loadtxt(os.path.join(data_path, "spanish_dataset.txt"), dtype=int)
+    data = np.loadtxt(
+        os.path.join(data_path, "spanish_dataset.txt"), dtype=int
+    )
     df = pd.DataFrame(data=data, columns=("user_id", "item_id", "correct"))
 
     skills = np.loadtxt(os.path.join(data_path, "spanish_expert_labels.txt"))
@@ -317,10 +428,22 @@ def prepare_spanish(train_split=0.8):
     test_df = df[df["user_id"].isin(users[split:])]
 
     # Save data
-    sparse.save_npz(os.path.join(data_path, "q_mat.npz"), sparse.csr_matrix(Q_mat))
-    train_df.to_csv(os.path.join(data_path, "preprocessed_data_train.csv"), sep="\t", index=False)
-    test_df.to_csv(os.path.join(data_path, "preprocessed_data_test.csv"), sep="\t", index=False)
-    df.to_csv(os.path.join(data_path, "preprocessed_data.csv"), sep="\t", index=False)
+    sparse.save_npz(
+        os.path.join(data_path, "q_mat.npz"), sparse.csr_matrix(Q_mat)
+    )
+    train_df.to_csv(
+        os.path.join(data_path, "preprocessed_data_train.csv"),
+        sep="\t",
+        index=False,
+    )
+    test_df.to_csv(
+        os.path.join(data_path, "preprocessed_data_test.csv"),
+        sep="\t",
+        index=False,
+    )
+    df.to_csv(
+        os.path.join(data_path, "preprocessed_data.csv"), sep="\t", index=False
+    )
 
 
 def prepare_ednet(min_interactions_per_user, train_split=0.8):
@@ -347,17 +470,19 @@ def prepare_ednet(min_interactions_per_user, train_split=0.8):
 
     for i, skill in enumerate(unique_skills):
         skill_mapper[skill] = i
-    df['skill_id_2'] = df.skill_id.apply(lambda skill: skill_mapper[skill])
+    df["skill_id_2"] = df.skill_id.apply(lambda skill: skill_mapper[skill])
 
     unique_items = df.item_id.unique()
     item_mapper = {}
 
     for i, item in enumerate(unique_items):
         item_mapper[item] = i
-    df['item_id_2'] = df.item_id.apply(lambda item: item_mapper[item])
+    df["item_id_2"] = df.item_id.apply(lambda item: item_mapper[item])
 
     df = df[["user_id", "item_id_2", "timestamp", "correct", "skill_id_2"]]
-    df = df.rename({"item_id_2": "item_id", "skill_id_2": "skill_id"}, axis='columns')
+    df = df.rename(
+        {"item_id_2": "item_id", "skill_id_2": "skill_id"}, axis="columns"
+    )
     print("Item and Skill mapping completed")
     print("----------------------------")
 
@@ -375,7 +500,7 @@ def prepare_ednet(min_interactions_per_user, train_split=0.8):
     # filter by min_interactions
     df = df.groupby("user_id").filter(
         lambda x: len(x) >= min_interactions_per_user
-        )
+    )
 
     # Train-test split
     users = df["user_id"].unique()
@@ -386,45 +511,62 @@ def prepare_ednet(min_interactions_per_user, train_split=0.8):
 
     print("Writing data to file")
     # Save data
-    sparse.save_npz(os.path.join(data_path, "q_mat.npz"), sparse.csr_matrix(Q_mat))
-    train_df.to_csv(os.path.join(data_path, "preprocessed_data_train.csv"), sep="\t", index=False)
-    test_df.to_csv(os.path.join(data_path, "preprocessed_data_test.csv"), sep="\t", index=False)
-    df.to_csv(os.path.join(data_path, "preprocessed_data.csv"), sep="\t", index=False)
+    sparse.save_npz(
+        os.path.join(data_path, "q_mat.npz"), sparse.csr_matrix(Q_mat)
+    )
+    train_df.to_csv(
+        os.path.join(data_path, "preprocessed_data_train.csv"),
+        sep="\t",
+        index=False,
+    )
+    test_df.to_csv(
+        os.path.join(data_path, "preprocessed_data_test.csv"),
+        sep="\t",
+        index=False,
+    )
+    df.to_csv(
+        os.path.join(data_path, "preprocessed_data.csv"), sep="\t", index=False
+    )
     print("Writing complete")
     print("----------------------------")
-    
+
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Prepare datasets.')
-    parser.add_argument('--dataset', type=str, default='assistments09')
-    parser.add_argument('--min_interactions', type=int, default=10)
-    parser.add_argument('--remove_nan_skills', action='store_true')
+    parser = argparse.ArgumentParser(description="Prepare datasets.")
+    parser.add_argument("--dataset", type=str, default="assistments09")
+    parser.add_argument("--min_interactions", type=int, default=10)
+    parser.add_argument("--remove_nan_skills", action="store_true")
     args = parser.parse_args()
 
-    if args.dataset in ["assistments09", "assistments12", "assistments15", "assistments17"]:
+    if args.dataset in [
+        "assistments09",
+        "assistments12",
+        "assistments15",
+        "assistments17",
+    ]:
         prepare_assistments(
             data_name=args.dataset,
             min_interactions_per_user=args.min_interactions,
-            remove_nan_skills=args.remove_nan_skills)
+            remove_nan_skills=args.remove_nan_skills,
+        )
     elif args.dataset == "bridge_algebra06":
         prepare_kddcup10(
             data_name="bridge_algebra06",
             min_interactions_per_user=args.min_interactions,
             kc_col_name="KC(SubSkills)",
-            remove_nan_skills=args.remove_nan_skills)
+            remove_nan_skills=args.remove_nan_skills,
+        )
     elif args.dataset == "algebra05":
         prepare_kddcup10(
             data_name="algebra05",
             min_interactions_per_user=args.min_interactions,
             kc_col_name="KC(Default)",
-            remove_nan_skills=args.remove_nan_skills)
+            remove_nan_skills=args.remove_nan_skills,
+        )
     elif args.dataset == "squirrel_ai":
-        prepare_squirrel_ai(
-            min_interactions_per_user=args.min_interactions)
+        prepare_squirrel_ai(min_interactions_per_user=args.min_interactions)
     elif args.dataset == "spanish":
         prepare_spanish()
     elif args.dataset == "ednet":
         print("lets go ednet!")
-        prepare_ednet(
-            min_interactions_per_user=args.min_interactions,
-        )
+        prepare_ednet(min_interactions_per_user=args.min_interactions,)
