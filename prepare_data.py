@@ -3,6 +3,9 @@ import pandas as pd
 from scipy import sparse
 import argparse
 import os
+import json
+from sklearn.model_selection import StratifiedShuffleSplit
+from tqdm import tqdm, tqdm_pandas
 
 
 def prepare_assistments(
@@ -446,7 +449,7 @@ def prepare_spanish(train_split=0.8):
     )
 
 
-def prepare_ednet(min_interactions_per_user, train_split=0.8):
+def prepare_ednet(min_interactions_per_user, train_split=0.8, data_size=None):
     """Preprocess Ednet dataset.
 
     Arguments:
@@ -458,6 +461,7 @@ def prepare_ednet(min_interactions_per_user, train_split=0.8):
             timestamp, correct and unique skill features
         Q_mat (item-skill relationships sparse array): corresponding q-matrix
     """
+    tqdm_pandas(tqdm())
     print("Ednet data load start...")
     data_path = "data/ednet"
     df = pd.read_csv(os.path.join(data_path, "ednet.csv"))
@@ -468,15 +472,15 @@ def prepare_ednet(min_interactions_per_user, train_split=0.8):
     unique_skills = df.skill_id.unique()
     skill_mapper = {}
 
-    for i, skill in enumerate(unique_skills):
-        skill_mapper[skill] = i
+    for i, skill in tqdm(enumerate(unique_skills)):
+        skill_mapper[int(skill)] = int(i)
     df["skill_id_2"] = df.skill_id.apply(lambda skill: skill_mapper[skill])
 
     unique_items = df.item_id.unique()
     item_mapper = {}
 
-    for i, item in enumerate(unique_items):
-        item_mapper[item] = i
+    for i, item in tqdm(enumerate(unique_items)):
+        item_mapper[int(item)] = int(i)
     df["item_id_2"] = df.item_id.apply(lambda item: item_mapper[item])
 
     df = df[["user_id", "item_id_2", "timestamp", "correct", "skill_id_2"]]
@@ -489,31 +493,78 @@ def prepare_ednet(min_interactions_per_user, train_split=0.8):
     # Build Q-matrix
     print("building Q-matrix")
     Q_mat = np.zeros((df["item_id"].nunique(), df["skill_id"].nunique()))
-    for item_id, skill_id in df[["item_id", "skill_id"]].values:
+    for item_id, skill_id in tqdm(df[["item_id", "skill_id"]].values):
         Q_mat[item_id, skill_id] = 1
     print("Q-matrix built...")
     print("----------------------------")
 
     # Sort data by users, preserving temporal order for each user
     df = pd.concat([u_df for _, u_df in df.groupby("user_id")])
-
     # filter by min_interactions
     df = df.groupby("user_id").filter(
         lambda x: len(x) >= min_interactions_per_user
     )
 
-    # Train-test split
-    users = df["user_id"].unique()
-    np.random.shuffle(users)
-    split = int(train_split * len(users))
-    train_df = df[df["user_id"].isin(users[:split])]
-    test_df = df[df["user_id"].isin(users[split:])]
+    if data_size:
+        print("Shrinking data to - %s" % (data_size))
 
+        # getting rid of outliers... 
+        df = df.groupby("user_id").filter(
+                lambda x: len(x) <= 10000
+        )
+
+        data_path = data_path + "_" + data_size
+        size_mapper = {"small": 5000, "medium": 100000}
+        total_size = size_mapper[data_size]
+
+        print("getting stats for labelling")
+        user_sum = df.groupby('user_id').correct.sum()
+        user_count = df.groupby('user_id').correct.count()
+        user_correctness = user_sum / user_count
+        
+        # creating labels in order to split data evenly with correctness groups
+        correctness_label = []
+        correctness_range = [i/10 for i in range(1, 11)]
+        for i, label in enumerate(user_correctness):
+            for j, label_range in enumerate(correctness_range):
+                if label < label_range:
+                    correctness_label.append(j)
+                    break
+                elif j == len(correctness_range)-1 and label >= label_range:
+                    correctness_label.append(j)
+
+        print("splitting data")
+        test_split = float(100 - int(train_split * 100))/100
+        sss = StratifiedShuffleSplit(
+            n_splits=2,
+            train_size=int(total_size*train_split),
+            test_size=int(total_size*test_split),
+            random_state=42
+        )
+        sss.get_n_splits(user_correctness.index, correctness_label)
+        
+        for train_index, test_index in sss.split(
+            user_correctness.index, correctness_label
+        ):
+            # print("TRAIN:", len(train_index), "TEST:", len(test_index))
+            train_user = train_index
+            test_user = test_index
+            break
+        
+        train_df = df[df["user_id"].isin(train_user)]
+        test_df = df[df["user_id"].isin(test_user)]
+        all_df = np.concatenate((train_user, test_user), axis=0)
+        df =df[df["user_id"].isin(all_df)]
+    else:
+        # Train-test random split
+        users = df["user_id"].unique()
+        np.random.shuffle(users)
+        split = int(train_split * len(users))
+        train_df = df[df["user_id"].isin(users[:split])]
+        test_df = df[df["user_id"].isin(users[split:])]
+        
     print("Writing data to file")
     # Save data
-    sparse.save_npz(
-        os.path.join(data_path, "q_mat.npz"), sparse.csr_matrix(Q_mat)
-    )
     train_df.to_csv(
         os.path.join(data_path, "preprocessed_data_train.csv"),
         sep="\t",
@@ -527,6 +578,15 @@ def prepare_ednet(min_interactions_per_user, train_split=0.8):
     df.to_csv(
         os.path.join(data_path, "preprocessed_data.csv"), sep="\t", index=False
     )
+
+    sparse.save_npz(
+        os.path.join(data_path, "q_mat.npz"), sparse.csr_matrix(Q_mat)
+    )
+    with open(os.path.join(data_path, "skill_mapper.json"), "w") as f:
+        json.dump(skill_mapper, f)
+    with open(os.path.join(data_path, "item_mapper.json"), "w") as f:
+        json.dump(item_mapper, f)
+
     print("Writing complete")
     print("----------------------------")
 
@@ -536,6 +596,7 @@ if __name__ == "__main__":
     parser.add_argument("--dataset", type=str, default="assistments09")
     parser.add_argument("--min_interactions", type=int, default=10)
     parser.add_argument("--remove_nan_skills", action="store_true")
+    parser.add_argument("--size", type=str, default=None)
     args = parser.parse_args()
 
     if args.dataset in [
@@ -569,4 +630,8 @@ if __name__ == "__main__":
         prepare_spanish()
     elif args.dataset == "ednet":
         print("lets go ednet!")
-        prepare_ednet(min_interactions_per_user=args.min_interactions,)
+        print("size : %s" % (args.size))
+        prepare_ednet(
+            min_interactions_per_user=args.min_interactions,
+            data_size=args.size,
+        )
