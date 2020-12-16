@@ -276,7 +276,9 @@ def df_to_sparse(df, Q_mat, active_features):
     print("time taken for parallel process %f" % (end_time - start_time))
 
     start_time = time.time()
-    for single_output in tqdm(process_output):
+    for cnt, single_output in tqdm(enumerate(process_output)):
+        if cnt % 10000 == 0:
+            print("Current step %d" % (cnt))
         for key in single_output.keys():
             if key == "df":
                 features[key] = np.vstack((features["df"], single_output[key]))

@@ -1,7 +1,9 @@
 import os
 import argparse
 import numpy as np
-import pandas as pd
+#import pandas as pd
+import modin.pandas as pd
+
 from tqdm import tqdm
 
 from scipy import sparse
