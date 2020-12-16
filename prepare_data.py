@@ -542,7 +542,6 @@ def prepare_ednet(min_interactions_per_user, train_split=0.8, data_size=None):
             random_state=42
         )
         sss.get_n_splits(user_correctness.index, correctness_label)
-        print(type(user_correctness))
         for train_index, test_index in sss.split(
             user_correctness.index, correctness_label
         ):

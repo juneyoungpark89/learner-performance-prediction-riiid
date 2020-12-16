@@ -599,8 +599,11 @@ def prepare_ednet(min_interactions_per_user, train_split=0.8, data_size=None):
 
     print("Writing complete")
     print("----------------------------")
+<<<<<<< HEAD
     print("process taken")
     print(time.time() - start_time)
+=======
+>>>>>>> 87c358356b82f583c6116ab88fac4f41c53d1137
 
 
 if __name__ == "__main__":
